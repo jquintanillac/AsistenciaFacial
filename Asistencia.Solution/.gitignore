@@ -1,0 +1,39 @@
+# ========================= 
+# Visual Studio 
+# ========================= 
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+slnx.sqlite
+VSWorkspaceState.json
+
+# ========================= 
+# Build outputs 
+# ========================= 
+bin/ 
+obj/ 
+
+# ========================= 
+# Workspace / local state 
+# ========================= 
+slnx.sqlite 
+VSWorkspaceState.json 
+
+# ========================= 
+# Copilot / caches 
+# ========================= 
+CopilotIndices/ 
+*.db 
+
+# ========================= 
+# Logs 
+# ========================= 
+*.log 
+
+# ========================= 
+# OS 
+# ========================= 
+.DS_Store 
+Thumbs.db
