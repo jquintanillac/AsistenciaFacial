@@ -30,6 +30,16 @@ public class EmployeeRepository : IEmployeeRepository
 
     public async Task<int> AddAsync(EmployeeDto employee)
     {
+        try
+        {
+
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+ 
         var query = "INSERT INTO Employees (FirstName, LastName, Email, DateOfBirth) VALUES (@FirstName, @LastName, @Email, @DateOfBirth); SELECT CAST(SCOPE_IDENTITY() as int)";
         using var connection = _context.CreateConnection();
         return await connection.QuerySingleAsync<int>(query, employee);
