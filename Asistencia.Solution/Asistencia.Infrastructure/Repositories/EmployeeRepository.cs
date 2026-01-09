@@ -1,61 +1,119 @@
 using Asistencia.Application.Interfaces;
-using Asistencia.Infrastructure.Data;
-using Asistencia.Shared.DTOs;
+using Asistencia.Shared.DTOs.Requests;
+using Asistencia.Shared.DTOs.Responses;
 using Dapper;
+using Microsoft.Extensions.Logging;
+using System.Data;
 
 namespace Asistencia.Infrastructure.Repositories;
 
 public class EmployeeRepository : IEmployeeRepository
 {
-    private readonly DapperContext _context;
+    private readonly IDbConnectionFactory _connectionFactory;
+    private readonly ILogger<EmployeeRepository> _logger;
 
-    public EmployeeRepository(DapperContext context)
+    public EmployeeRepository(IDbConnectionFactory connectionFactory, ILogger<EmployeeRepository> logger)
     {
-        _context = context;
+        _connectionFactory = connectionFactory;
+        _logger = logger;
     }
 
-    public async Task<IEnumerable<EmployeeDto>> GetAllAsync()
+    public async Task<IEnumerable<EmployeeResponse>> GetAllAsync()
     {
-        var query = "SELECT * FROM Employees";
-        using var connection = _context.CreateConnection();
-        return await connection.QueryAsync<EmployeeDto>(query);
+        var query = "sp_Empleado_GETALL";
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QueryAsync<EmployeeResponse>(query, commandType: CommandType.StoredProcedure);
     }
 
-    public async Task<EmployeeDto?> GetByIdAsync(int id)
+    public async Task<EmployeeResponse?> GetByIdAsync(int id)
     {
-        var query = "SELECT * FROM Employees WHERE Id = @Id";
-        using var connection = _context.CreateConnection();
-        return await connection.QuerySingleOrDefaultAsync<EmployeeDto>(query, new { Id = id });
+        var query = "sp_Empleado_GETBYID";
+        var parameters = new DynamicParameters();
+        parameters.Add("IdEmpleado", id);
+
+        using var connection = _connectionFactory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<EmployeeResponse>(query, parameters, commandType: CommandType.StoredProcedure);
     }
 
-    public async Task<int> AddAsync(EmployeeDto employee)
+    public async Task<int> AddAsync(CreateEmployeeRequest request)
     {
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.OpenAsync();
+        using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
         try
         {
+            var query = "sp_Empleado_INSERT";
+            var parameters = new DynamicParameters();
+            parameters.Add("IdEmpresa", request.IdEmpresa);
+            parameters.Add("DNI", request.DNI);
+            parameters.Add("Nombres", request.Nombres);
+            parameters.Add("Apellidos", request.Apellidos);
+            parameters.Add("Cargo", request.Cargo);
 
+            var id = await connection.QuerySingleAsync<int>(query, parameters, transaction, commandType: CommandType.StoredProcedure);
+            
+            transaction.Commit();
+            return id;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-
+            transaction.Rollback();
+            _logger.LogError(ex, "Error adding employee");
             throw;
         }
- 
-        var query = "INSERT INTO Employees (FirstName, LastName, Email, DateOfBirth) VALUES (@FirstName, @LastName, @Email, @DateOfBirth); SELECT CAST(SCOPE_IDENTITY() as int)";
-        using var connection = _context.CreateConnection();
-        return await connection.QuerySingleAsync<int>(query, employee);
     }
 
-    public async Task UpdateAsync(EmployeeDto employee)
+    public async Task UpdateAsync(UpdateEmployeeRequest request)
     {
-        var query = "UPDATE Employees SET FirstName = @FirstName, LastName = @LastName, Email = @Email, DateOfBirth = @DateOfBirth WHERE Id = @Id";
-        using var connection = _context.CreateConnection();
-        await connection.ExecuteAsync(query, employee);
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.OpenAsync();
+        using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
+        try
+        {
+            var query = "sp_Empleado_UPDATE";
+            var parameters = new DynamicParameters();
+            parameters.Add("IdEmpleado", request.IdEmpleado);
+            parameters.Add("IdEmpresa", request.IdEmpresa);
+            parameters.Add("DNI", request.DNI);
+            parameters.Add("Nombres", request.Nombres);
+            parameters.Add("Apellidos", request.Apellidos);
+            parameters.Add("Cargo", request.Cargo);
+
+            await connection.ExecuteAsync(query, parameters, transaction, commandType: CommandType.StoredProcedure);
+            
+            transaction.Commit();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            _logger.LogError(ex, "Error updating employee");
+            throw;
+        }
     }
 
     public async Task DeleteAsync(int id)
     {
-        var query = "DELETE FROM Employees WHERE Id = @Id";
-        using var connection = _context.CreateConnection();
-        await connection.ExecuteAsync(query, new { Id = id });
+        using var connection = _connectionFactory.CreateConnection();
+        await connection.OpenAsync();
+        using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
+        try
+        {
+            var query = "sp_Empleado_DELETE";
+            var parameters = new DynamicParameters();
+            parameters.Add("IdEmpleado", id);
+
+            await connection.ExecuteAsync(query, parameters, transaction, commandType: CommandType.StoredProcedure);
+            
+            transaction.Commit();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            _logger.LogError(ex, "Error deleting employee");
+            throw;
+        }
     }
 }

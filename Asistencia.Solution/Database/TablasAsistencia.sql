@@ -39,6 +39,7 @@ CREATE TABLE Usuario (
     IdUsuario INT PRIMARY KEY IDENTITY(1,1),
     IdEmpleado INT NULL FOREIGN KEY REFERENCES Empleado(IdEmpleado),
     Username NVARCHAR(50) UNIQUE NOT NULL,
+    Email NVARCHAR(100) UNIQUE NULL,
     PasswordHash NVARCHAR(MAX) NOT NULL,
     Estado BIT DEFAULT 1
 );
@@ -56,7 +57,7 @@ CREATE TABLE RolUsuario (
     PRIMARY KEY (IdUsuario, IdRol)
 );
 
--- 6. ENTIDAD: Enrolamiento (Biometría)
+-- 6. ENTIDAD: Enrolamiento (Biometrï¿½a)
 CREATE TABLE Enrolamiento (
     IdEnrolamiento INT PRIMARY KEY IDENTITY(1,1),
     IdEmpleado INT FOREIGN KEY REFERENCES Empleado(IdEmpleado),
@@ -65,7 +66,7 @@ CREATE TABLE Enrolamiento (
     Estado BIT DEFAULT 1
 );
 
--- 7. ENTIDAD: HorarioEmpleado (Historial y asignación)
+-- 7. ENTIDAD: HorarioEmpleado (Historial y asignaciï¿½n)
 CREATE TABLE HorarioEmpleado (
     IdHorarioEmpleado INT PRIMARY KEY IDENTITY(1,1),
     IdEmpleado INT FOREIGN KEY REFERENCES Empleado(IdEmpleado),
@@ -108,7 +109,7 @@ CREATE TABLE RegistroAsistencia (
     EstadoAsistencia NVARCHAR(50) -- 'PUNTUAL', 'TARDANZA', 'FALTA'
 );
 
--- 11. ENTIDAD: Configuracion (Parámetros SaaS)
+-- 11. ENTIDAD: Configuracion (Parï¿½metros SaaS)
 CREATE TABLE Configuracion (
     IdConfiguracion INT PRIMARY KEY IDENTITY(1,1),
     IdEmpresa INT FOREIGN KEY REFERENCES Empresa(IdEmpresa),

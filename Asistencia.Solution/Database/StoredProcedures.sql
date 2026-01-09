@@ -201,11 +201,12 @@ GO
 CREATE PROCEDURE sp_Usuario_INSERT
     @IdEmpleado INT,
     @Username NVARCHAR(50),
+    @Email NVARCHAR(100),
     @PasswordHash NVARCHAR(MAX)
 AS
 BEGIN
-    INSERT INTO Usuario (IdEmpleado, Username, PasswordHash, Estado)
-    VALUES (@IdEmpleado, @Username, @PasswordHash, 1);
+    INSERT INTO Usuario (IdEmpleado, Username, Email, PasswordHash, Estado)
+    VALUES (CASE WHEN @IdEmpleado = 0 THEN NULL ELSE @IdEmpleado END, @Username, @Email, @PasswordHash, 1);
     
     SELECT CAST(SCOPE_IDENTITY() as int);
 END
@@ -215,12 +216,14 @@ CREATE PROCEDURE sp_Usuario_UPDATE
     @IdUsuario INT,
     @IdEmpleado INT,
     @Username NVARCHAR(50),
+    @Email NVARCHAR(100),
     @PasswordHash NVARCHAR(MAX)
 AS
 BEGIN
     UPDATE Usuario
-    SET IdEmpleado = @IdEmpleado,
+    SET IdEmpleado = CASE WHEN @IdEmpleado = 0 THEN NULL ELSE @IdEmpleado END,
         Username = @Username,
+        Email = @Email,
         PasswordHash = @PasswordHash
     WHERE IdUsuario = @IdUsuario;
 END
