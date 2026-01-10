@@ -1,0 +1,14 @@
+@page "/logout"
+@using Asistencia.Web.Services
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+<h3>Cerrando sesión...</h3>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await AuthService.LogoutAsync();
+        NavigationManager.NavigateTo("/login");
+    }
+}

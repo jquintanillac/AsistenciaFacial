@@ -1,16 +1,71 @@
-﻿@inherits LayoutComponentBase
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using BlazorBootstrap
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<div class="bb-page">
+    <Sidebar @ref="sidebar"
+             IconName="IconName.BootstrapFill"
+             Title="Asistencia"
+             DataProvider="SidebarDataProvider" />
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+        <div class="bb-top-row px-4 d-flex justify-content-end align-items-center bg-white shadow-sm">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="me-3">Hola, <strong>@context.User.Identity?.Name</strong></span>
+                    <a href="logout" class="btn btn-link text-decoration-none">Cerrar Sesión</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="login" class="btn btn-link text-decoration-none">Iniciar Sesión</a>
+                </NotAuthorized>
+            </AuthorizeView>
+            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank" class="ms-3 text-decoration-none text-muted">About</a>
         </div>
 
-        <article class="content px-4">
+        <div class="content px-4 py-3">
             @Body
-        </article>
+        </div>
     </main>
 </div>
+
+<Modal @ref="modal" />
+<Preload />
+<Toasts class="p-3" AutoHide="true" Delay="4000" Placement="ToastsPlacement.TopRight" />
+
+@code {
+    private Sidebar sidebar = default!;
+    private Modal modal = default!;
+    
+    [CascadingParameter] private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    private async Task<SidebarDataProviderResult> SidebarDataProvider(SidebarDataProviderRequest request)
+    {
+        if (authenticationStateTask == null) return request.ApplyTo(new List<NavItem>());
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+        var navItems = new List<NavItem>();
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            navItems.Add(new NavItem { Id = "1", Href = "/", IconName = IconName.HouseDoorFill, Text = "Inicio", Match = NavLinkMatch.All });
+            navItems.Add(new NavItem { Id = "2", Href = "empresas", IconName = IconName.BriefcaseFill, Text = "Empresas" });
+            navItems.Add(new NavItem { Id = "3", Href = "configuracion", IconName = IconName.GearFill, Text = "Configuración" });
+            navItems.Add(new NavItem { Id = "4", Href = "ubicaciones", IconName = IconName.GeoAltFill, Text = "Ubicaciones" });
+            navItems.Add(new NavItem { Id = "5", Href = "horarios", IconName = IconName.ClockFill, Text = "Horarios" });
+            navItems.Add(new NavItem { Id = "6", Href = "registro-asistencia", IconName = IconName.CalendarEventFill, Text = "Asistencia" });
+            navItems.Add(new NavItem { Id = "7", Href = "empleados", IconName = IconName.PeopleFill, Text = "Empleados" });
+            navItems.Add(new NavItem { Id = "8", Href = "usuarios", IconName = IconName.PersonFill, Text = "Usuarios" });
+            navItems.Add(new NavItem { Id = "9", Href = "roles", IconName = IconName.KeyFill, Text = "Roles" });
+            navItems.Add(new NavItem { Id = "10", Href = "enrolamiento", IconName = IconName.Fingerprint, Text = "Enrolamiento" });
+            navItems.Add(new NavItem { Id = "11", Href = "auditoria", IconName = IconName.ListCheck, Text = "Auditoría" });
+        }
+        else 
+        {
+             navItems.Add(new NavItem { Id = "99", Href = "login", IconName = IconName.BoxArrowInRight, Text = "Iniciar Sesión" });
+        }
+
+        return request.ApplyTo(navItems);
+    }
+}

@@ -1,0 +1,182 @@
+@page "/configuracion"
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Configuración</PageTitle>
+
+<div class="container-fluid">
+    <h3 class="mb-4">Configuración del Sistema</h3>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Card Class="shadow-sm">
+            <CardHeader Class="bg-light fw-bold">Parámetros Generales</CardHeader>
+            <CardBody>
+                <EditForm Model="@viewModel" OnValidSubmit="SaveConfig">
+                    <DataAnnotationsValidator />
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Hora Entrada (HH:mm:ss)</label>
+                            <InputText class="form-control" @bind-Value="viewModel.HoraEntrada" />
+                            <ValidationMessage For="@(() => viewModel.HoraEntrada)" />
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Hora Salida (HH:mm:ss)</label>
+                            <InputText class="form-control" @bind-Value="viewModel.HoraSalida" />
+                            <ValidationMessage For="@(() => viewModel.HoraSalida)" />
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Tolerancia (minutos)</label>
+                            <InputNumber class="form-control" @bind-Value="viewModel.ToleranciaMinutos" />
+                            <ValidationMessage For="@(() => viewModel.ToleranciaMinutos)" />
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">ID Empresa</label>
+                            <InputNumber class="form-control" @bind-Value="viewModel.IdEmpresa" />
+                            <ValidationMessage For="@(() => viewModel.IdEmpresa)" />
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <Button Type="ButtonType.Submit" Color="ButtonColor.Primary">
+                            <Icon Name="IconName.Save" Class="me-2" /> Guardar Configuración
+                        </Button>
+                    </div>
+                </EditForm>
+            </CardBody>
+        </Card>
+    }
+</div>
+
+@code {
+    private ConfigViewModel viewModel = new();
+    private List<ConfiguracionResponse> configuracionesExistentes = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string? successMessage;
+    private bool isSaving = false;
+
+    // ViewModel local para mapear las claves de configuración
+    public class ConfigViewModel
+    {
+        public int IdEmpresa { get; set; } = 1; // Default
+        public string HoraEntrada { get; set; } = "08:00:00";
+        public string HoraSalida { get; set; } = "17:00:00";
+        public int ToleranciaMinutos { get; set; } = 15;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConfig();
+    }
+
+    private async Task LoadConfig()
+    {
+        isLoading = true;
+        var result = await ApiService.GetAsync<IEnumerable<ConfiguracionResponse>>("api/Configuracion");
+        if (result.IsSuccess)
+        {
+            configuracionesExistentes = result.Value?.ToList() ?? new List<ConfiguracionResponse>();
+            
+            // Mapear valores existentes al ViewModel
+            if (configuracionesExistentes.Any())
+            {
+                var first = configuracionesExistentes.First();
+                viewModel.IdEmpresa = first.IdEmpresa; // Asumimos que todas son de la misma empresa por ahora
+
+                var entrada = configuracionesExistentes.FirstOrDefault(c => c.Clave == "HoraEntrada");
+                if (entrada != null) viewModel.HoraEntrada = entrada.Valor;
+
+                var salida = configuracionesExistentes.FirstOrDefault(c => c.Clave == "HoraSalida");
+                if (salida != null) viewModel.HoraSalida = salida.Valor;
+
+                var tolerancia = configuracionesExistentes.FirstOrDefault(c => c.Clave == "ToleranciaMinutos");
+                if (tolerancia != null && int.TryParse(tolerancia.Valor, out int tol)) 
+                    viewModel.ToleranciaMinutos = tol;
+            }
+        }
+        else
+        {
+            errorMessage = result.Error;
+        }
+        isLoading = false;
+    }
+
+    private async Task SaveConfig()
+    {
+        isSaving = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try 
+        {
+            await SaveOrUpdateKey("HoraEntrada", viewModel.HoraEntrada);
+            await SaveOrUpdateKey("HoraSalida", viewModel.HoraSalida);
+            await SaveOrUpdateKey("ToleranciaMinutos", viewModel.ToleranciaMinutos.ToString());
+            
+            await LoadConfig(); // Recargar para obtener IDs actualizados
+            successMessage = "Configuración guardada exitosamente.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al guardar: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task SaveOrUpdateKey(string key, string value)
+    {
+        var existing = configuracionesExistentes.FirstOrDefault(c => c.Clave == key);
+        if (existing != null)
+        {
+            // Update
+            var updateRequest = new UpdateConfiguracionRequest
+            {
+                IdConfiguracion = existing.IdConfiguracion,
+                IdEmpresa = viewModel.IdEmpresa,
+                Clave = key,
+                Valor = value,
+                Logo = existing.Logo
+            };
+            var result = await ApiService.PutAsync<bool>($"api/Configuracion/{existing.IdConfiguracion}", updateRequest);
+            if (!result.IsSuccess) throw new Exception(result.Error);
+        }
+        else
+        {
+            // Create
+            var createRequest = new CreateConfiguracionRequest
+            {
+                IdEmpresa = viewModel.IdEmpresa,
+                Clave = key,
+                Valor = value
+            };
+            var result = await ApiService.PostAsync<ConfiguracionResponse>("api/Configuracion", createRequest);
+            if (!result.IsSuccess) throw new Exception(result.Error);
+        }
+    }
+}

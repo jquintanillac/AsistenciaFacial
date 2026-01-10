@@ -21,7 +21,7 @@ public static class ServiceExtensions
         // Infrastructure
         services.AddSingleton<IDbConnectionFactory, DapperContext>();
         services.AddScoped<IPasswordHasher, PasswordHasher>();
-        services.AddScoped<DataSeeder>();
+        //services.AddTransient<DataSeeder>();
         services.AddScoped<IEmployeeRepository, EmployeeRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IEmpresaRepository, EmpresaRepository>();

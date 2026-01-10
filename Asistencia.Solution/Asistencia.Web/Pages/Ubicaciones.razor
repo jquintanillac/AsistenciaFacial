@@ -1,0 +1,243 @@
+@page "/ubicaciones"
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<PageTitle>Ubicaciones Permitidas</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Ubicaciones Permitidas</h3>
+        <Button Color="ButtonColor.Primary" @onclick="ShowCreateModal">
+            <Icon Name="IconName.Plus" /> Nueva Ubicación
+        </Button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="UbicacionPermitidaResponse" Data="ubicaciones" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="UbicacionPermitidaResponse" HeaderText="Nombre" PropertyName="Nombre" Sortable="true">
+                    @context.Nombre
+                </GridColumn>
+                <GridColumn TItem="UbicacionPermitidaResponse" HeaderText="Latitud" PropertyName="Latitud">
+                    @context.Latitud
+                </GridColumn>
+                <GridColumn TItem="UbicacionPermitidaResponse" HeaderText="Longitud" PropertyName="Longitud">
+                    @context.Longitud
+                </GridColumn>
+                <GridColumn TItem="UbicacionPermitidaResponse" HeaderText="Radio (m)" PropertyName="RadioMetros">
+                    @context.RadioMetros
+                </GridColumn>
+                <GridColumn TItem="UbicacionPermitidaResponse" HeaderText="Acciones" Context="item">
+                    <Button Color="ButtonColor.Warning" Size="ButtonSize.Small" @onclick="() => ShowEditModal(item)" Class="me-2" TooltipTitle="Editar">
+                        <Icon Name="IconName.Pencil" />
+                    </Button>
+                    <Button Color="ButtonColor.Danger" Size="ButtonSize.Small" @onclick="() => DeleteUbicacion(item.IdUbicacion)" TooltipTitle="Eliminar">
+                        <Icon Name="IconName.Trash" />
+                    </Button>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+<Modal @ref="modal" Title="@(isEditing ? "Editar Ubicación" : "Nueva Ubicación")" IsVerticallyCentered="true" Size="ModalSize.Large">
+    <BodyTemplate>
+        <EditForm Model="@currentUbicacion" OnValidSubmit="SaveUbicacion">
+            <DataAnnotationsValidator />
+            
+            <div class="mb-3">
+                <label class="form-label">Nombre</label>
+                <InputText class="form-control" @bind-Value="currentUbicacion.Nombre" />
+                <ValidationMessage For="@(() => currentUbicacion.Nombre)" />
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Latitud</label>
+                    <InputNumber class="form-control" @bind-Value="currentUbicacion.Latitud" readonly />
+                    <ValidationMessage For="@(() => currentUbicacion.Latitud)" />
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Longitud</label>
+                    <InputNumber class="form-control" @bind-Value="currentUbicacion.Longitud" readonly />
+                    <ValidationMessage For="@(() => currentUbicacion.Longitud)" />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Radio (Metros)</label>
+                <InputNumber class="form-control" @bind-Value="currentUbicacion.RadioMetros" />
+                <ValidationMessage For="@(() => currentUbicacion.RadioMetros)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">ID Empresa</label>
+                <InputNumber class="form-control" @bind-Value="currentUbicacion.IdEmpresa" />
+                <ValidationMessage For="@(() => currentUbicacion.IdEmpresa)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Seleccionar Ubicación en el Mapa</label>
+                <div id="map" style="height: 400px; width: 100%;"></div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
+                <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+            </div>
+        </EditForm>
+    </BodyTemplate>
+</Modal>
+
+@code {
+    private IEnumerable<UbicacionPermitidaResponse>? ubicaciones;
+    private UpdateUbicacionPermitidaRequest currentUbicacion = new();
+    private bool isLoading = true;
+    private bool isEditing = false;
+    private string? errorMessage;
+    private Modal modal = default!;
+    private DotNetObjectReference<Ubicaciones>? dotNetHelper;
+
+    protected override async Task OnInitializedAsync()
+    {
+        dotNetHelper = DotNetObjectReference.Create(this);
+        await LoadUbicaciones();
+    }
+
+    [JSInvokable]
+    public void UpdateCoordinates(double lat, double lng)
+    {
+        currentUbicacion.Latitud = (decimal)lat;
+        currentUbicacion.Longitud = (decimal)lng;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        dotNetHelper?.Dispose();
+    }
+
+    private async Task LoadUbicaciones()
+    {
+        isLoading = true;
+        var result = await ApiService.GetAsync<IEnumerable<UbicacionPermitidaResponse>>("api/UbicacionPermitida");
+        if (result.IsSuccess)
+        {
+            ubicaciones = result.Value;
+        }
+        else
+        {
+            errorMessage = result.Error;
+        }
+        isLoading = false;
+    }
+
+    private async Task ShowCreateModal()
+    {
+        currentUbicacion = new UpdateUbicacionPermitidaRequest();
+        isEditing = false;
+        errorMessage = null;
+        await modal.ShowAsync();
+        
+        // Inicializar mapa después de mostrar el modal
+        // Usamos una ubicación por defecto (Lima, Perú) si no hay coordenadas
+        await JSRuntime.InvokeVoidAsync("setDotNetHelper", dotNetHelper);
+        await JSRuntime.InvokeVoidAsync("initMap", -12.046374, -77.042793);
+    }
+
+    private async Task ShowEditModal(UbicacionPermitidaResponse ubicacion)
+    {
+        currentUbicacion = new UpdateUbicacionPermitidaRequest
+        {
+            IdUbicacion = ubicacion.IdUbicacion,
+            IdEmpresa = ubicacion.IdEmpresa,
+            Nombre = ubicacion.Nombre,
+            Latitud = ubicacion.Latitud,
+            Longitud = ubicacion.Longitud,
+            RadioMetros = ubicacion.RadioMetros
+        };
+        isEditing = true;
+        errorMessage = null;
+        await modal.ShowAsync();
+
+        // Inicializar mapa con las coordenadas existentes
+        await JSRuntime.InvokeVoidAsync("setDotNetHelper", dotNetHelper);
+        await JSRuntime.InvokeVoidAsync("initMap", (double)ubicacion.Latitud, (double)ubicacion.Longitud);
+    }
+
+    private async Task HideModal()
+    {
+        await modal.HideAsync();
+    }
+
+    private async Task SaveUbicacion()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        if (isEditing)
+        {
+            var result = await ApiService.PutAsync<bool>($"api/UbicacionPermitida/{currentUbicacion.IdUbicacion}", currentUbicacion);
+            if (!result.IsSuccess) errorMessage = result.Error;
+        }
+        else
+        {
+            var createRequest = new CreateUbicacionPermitidaRequest
+            {
+                IdEmpresa = currentUbicacion.IdEmpresa,
+                Nombre = currentUbicacion.Nombre,
+                Latitud = currentUbicacion.Latitud,
+                Longitud = currentUbicacion.Longitud,
+                RadioMetros = currentUbicacion.RadioMetros
+            };
+
+            var result = await ApiService.PostAsync<UbicacionPermitidaResponse>("api/UbicacionPermitida", createRequest);
+            if (!result.IsSuccess) errorMessage = result.Error;
+        }
+
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            await HideModal();
+            await LoadUbicaciones();
+        }
+        else
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteUbicacion(int id)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar esta ubicación?"))
+        {
+            isLoading = true;
+            var result = await ApiService.DeleteAsync($"api/UbicacionPermitida/{id}");
+            if (result.IsSuccess)
+            {
+                await LoadUbicaciones();
+            }
+            else
+            {
+                errorMessage = result.Error;
+                isLoading = false;
+            }
+        }
+    }
+}

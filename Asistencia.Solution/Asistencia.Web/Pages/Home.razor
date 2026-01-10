@@ -1,7 +1,93 @@
-﻿@page "/"
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager NavigationManager
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Inicio - Sistema de Asistencia</PageTitle>
 
-<h1>Hello, world!</h1>
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid">
+            <div class="row mb-4">
+                <div class="col">
+                    <h2 class="display-6">Bienvenido, @context.User.Identity?.Name</h2>
+                    <p class="text-muted">Sistema de Control de Asistencia y Biometría</p>
+                </div>
+            </div>
 
-Welcome to your new app.
+            <div class="row g-4">
+                <div class="col-md-4 col-lg-3">
+                    <Card Class="h-100 shadow-sm hover-shadow cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/empleados")'>
+                        <CardBody Class="text-center p-4">
+                            <Icon Name="IconName.People" Size="IconSize.x3" Class="mb-3 text-primary" />
+                            <CardTitle Tag="h5">Empleados</CardTitle>
+                            <CardText>Gestión de personal y datos laborales.</CardText>
+                        </CardBody>
+                    </Card>
+                </div>
+
+                <div class="col-md-4 col-lg-3">
+                    <Card Class="h-100 shadow-sm hover-shadow cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/asistencias")'>
+                        <CardBody Class="text-center p-4">
+                            <Icon Name="IconName.CalendarCheck" Size="IconSize.x3" Class="mb-3 text-success" />
+                            <CardTitle Tag="h5">Asistencias</CardTitle>
+                            <CardText>Registro y control de marcaciones.</CardText>
+                        </CardBody>
+                    </Card>
+                </div>
+
+                <div class="col-md-4 col-lg-3">
+                    <Card Class="h-100 shadow-sm hover-shadow cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/reportes")'>
+                        <CardBody Class="text-center p-4">
+                            <Icon Name="IconName.FileEarmarkBarGraph" Size="IconSize.x3" Class="mb-3 text-info" />
+                            <CardTitle Tag="h5">Reportes</CardTitle>
+                            <CardText>Informes detallados de asistencia.</CardText>
+                        </CardBody>
+                    </Card>
+                </div>
+
+                <div class="col-md-4 col-lg-3">
+                    <Card Class="h-100 shadow-sm hover-shadow cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/configuracion")'>
+                        <CardBody Class="text-center p-4">
+                            <Icon Name="IconName.Gear" Size="IconSize.x3" Class="mb-3 text-secondary" />
+                            <CardTitle Tag="h5">Configuración</CardTitle>
+                            <CardText>Parámetros generales del sistema.</CardText>
+                        </CardBody>
+                    </Card>
+                </div>
+            </div>
+            
+             <div class="row mt-5">
+                <div class="col-12">
+                    <Card>
+                         <CardHeader>
+                            <Icon Name="IconName.Activity" Class="me-2" /> Actividad Reciente
+                        </CardHeader>
+                        <CardBody>
+                            <p class="text-muted">No hay actividad reciente para mostrar.</p>
+                        </CardBody>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="text-center mt-5">
+            <h1 class="display-4">Sistema de Asistencia</h1>
+            <p class="lead">Por favor, inicie sesión para continuar.</p>
+            <Button Color="ButtonColor.Primary" Size="ButtonSize.Large" @onclick='() => NavigationManager.NavigateTo("/login")'>
+                Iniciar Sesión
+            </Button>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .hover-shadow:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+        transition: all .3s ease-in-out;
+    }
+    .cursor-pointer {
+        cursor: pointer;
+    }
+</style>

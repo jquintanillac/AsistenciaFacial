@@ -90,8 +90,8 @@ public class UserRepository : IUserRepository
     public async Task UpdateAsync(UpdateUsuarioRequest request)
     {
         using var connection = _connectionFactory.CreateConnection();
-        connection.Open();
-        using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+        await connection.OpenAsync();
+        using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
 
         try
         {
@@ -113,7 +113,6 @@ public class UserRepository : IUserRepository
             parameters.Add("IdUsuario", request.IdUsuario);
             parameters.Add("IdEmpleado", request.IdEmpleado);
             parameters.Add("Username", request.Username);
-            parameters.Add("Email", request.Email);
             parameters.Add("PasswordHash", passwordHash);
 
             await connection.ExecuteAsync(query, parameters, transaction, commandType: CommandType.StoredProcedure);

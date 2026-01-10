@@ -1,0 +1,187 @@
+@page "/reportes"
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+
+<PageTitle>Reportes de Asistencia</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Reporte de Asistencia</h2>
+        <Button Color="ButtonColor.Secondary" @onclick="LoadData" Disabled="@isLoading">
+            <Icon Name="IconName.ArrowClockwise" Class="me-2" /> Actualizar
+        </Button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true" @onclick="() => errorMessage = null">@errorMessage</Alert>
+    }
+
+    <Card Class="mb-4">
+        <CardBody>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Empleado</label>
+                    <select class="form-select" @bind="selectedEmpleadoId">
+                        <option value="0">-- Todos los Empleados --</option>
+                        @foreach (var emp in empleados)
+                        {
+                            <option value="@emp.IdEmpleado">@emp.Nombres @emp.Apellidos</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Desde</label>
+                    <DateInput TValue="DateOnly?" @bind-Value="fechaDesde" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Hasta</label>
+                    <DateInput TValue="DateOnly?" @bind-Value="fechaHasta" />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <Button Color="ButtonColor.Primary" Class="w-100" @onclick="FiltrarReporte">
+                        <Icon Name="IconName.Filter" Class="me-2" /> Filtrar
+                    </Button>
+                </div>
+            </div>
+        </CardBody>
+    </Card>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <Spinner Color="SpinnerColor.Primary" Size="SpinnerSize.Large" />
+        </div>
+    }
+    else if (registrosFiltrados.Count == 0)
+    {
+        <Alert Color="AlertColor.Info">
+            <Icon Name="IconName.InfoCircle" Class="me-2" /> No se encontraron registros con los filtros seleccionados.
+        </Alert>
+    }
+    else
+    {
+        <Grid TItem="RegistroAsistenciaResponse" Data="registrosFiltrados" Class="table table-hover table-bordered table-striped" Responsive="true" AllowSorting="true" PageSize="10">
+            <GridColumns>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Empleado" Context="item">
+                    @GetEmpleadoName(item.IdEmpleado)
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Fecha" PropertyName="Fecha" Sortable="true">
+                    @context.Fecha.ToShortDateString()
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Entrada" Context="item">
+                    @(item.HoraEntrada?.ToString("HH:mm:ss") ?? "--:--:--")
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Salida" Context="item">
+                    @(item.HoraSalida?.ToString("HH:mm:ss") ?? "--:--:--")
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Estado" Context="item">
+                    <Badge Color="@GetEstadoBadgeColor(item.EstadoAsistencia)">@item.EstadoAsistencia</Badge>
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Tarde (min)" PropertyName="MinutosTarde" TextAlignment="Alignment.Center" />
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Horas Trab." PropertyName="HorasTrabajadas" TextAlignment="Alignment.Center" />
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+@code {
+    private List<RegistroAsistenciaResponse> allRegistros = new();
+    private List<RegistroAsistenciaResponse> registrosFiltrados = new();
+    private List<EmployeeResponse> empleados = new();
+    
+    private int selectedEmpleadoId = 0;
+    private DateOnly? fechaDesde;
+    private DateOnly? fechaHasta;
+    
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Establecer rango por defecto (mes actual)
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        fechaDesde = new DateOnly(today.Year, today.Month, 1);
+        fechaHasta = today;
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            // Cargar empleados para el filtro
+            var resultEmp = await ApiService.GetAsync<IEnumerable<EmployeeResponse>>("api/Employee");
+            if (resultEmp.IsSuccess)
+            {
+                empleados = resultEmp.Value?.ToList() ?? new();
+            }
+
+            // Cargar todos los registros
+            var resultReg = await ApiService.GetAsync<IEnumerable<RegistroAsistenciaResponse>>("api/RegistroAsistencia");
+            if (resultReg.IsSuccess)
+            {
+                allRegistros = resultReg.Value?.OrderByDescending(r => r.Fecha).ToList() ?? new();
+                FiltrarReporte();
+            }
+            else
+            {
+                errorMessage = "Error al cargar registros: " + resultReg.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error inesperado: " + ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void FiltrarReporte()
+    {
+        var query = allRegistros.AsQueryable();
+
+        if (selectedEmpleadoId > 0)
+        {
+            query = query.Where(r => r.IdEmpleado == selectedEmpleadoId);
+        }
+
+        if (fechaDesde.HasValue)
+        {
+            query = query.Where(r => DateOnly.FromDateTime(r.Fecha) >= fechaDesde.Value);
+        }
+
+        if (fechaHasta.HasValue)
+        {
+            query = query.Where(r => DateOnly.FromDateTime(r.Fecha) <= fechaHasta.Value);
+        }
+
+        registrosFiltrados = query.ToList();
+    }
+
+    private string GetEmpleadoName(int idEmpleado)
+    {
+        var emp = empleados.FirstOrDefault(e => e.IdEmpleado == idEmpleado);
+        return emp != null ? $"{emp.Nombres} {emp.Apellidos}" : $"ID: {idEmpleado}";
+    }
+
+    private BadgeColor GetEstadoBadgeColor(string estado)
+    {
+        return estado switch
+        {
+            "Presente" => BadgeColor.Success,
+            "Tarde" => BadgeColor.Warning,
+            "Ausente" => BadgeColor.Danger,
+            _ => BadgeColor.Secondary
+        };
+    }
+}

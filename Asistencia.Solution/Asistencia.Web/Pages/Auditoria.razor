@@ -1,0 +1,91 @@
+@page "/auditoria"
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+
+<PageTitle>Auditoría</PageTitle>
+
+<div class="container-fluid">
+    <div class="mb-4">
+        <h2>Registro de Auditoría</h2>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true" @onclick="() => errorMessage = null">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="AuditoriaResponse" Data="auditoriaLogs" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Fecha" PropertyName="Fecha" Sortable="true" >
+                    @context.Fecha.ToString("g")
+                </GridColumn>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Entidad" PropertyName="Entidad" Sortable="true" Context="item">
+                    @item.Entidad
+                </GridColumn>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Acción" PropertyName="Accion" Sortable="true" Context="item">
+                    @item.Accion
+                </GridColumn>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Usuario (ID)" PropertyName="IdUsuario" Sortable="true" Context="item">
+                    @item.IdUsuario
+                </GridColumn>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Detalle Anterior" Context="item">
+                    <div class="text-truncate" style="max-width: 200px;" title="@item.DetalleAnterior">
+                        @item.DetalleAnterior
+                    </div>
+                </GridColumn>
+                <GridColumn TItem="AuditoriaResponse" HeaderText="Detalle Nuevo" Context="item">
+                    <div class="text-truncate" style="max-width: 200px;" title="@item.DetalleNuevo">
+                        @item.DetalleNuevo
+                    </div>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+@code {
+    private List<AuditoriaResponse> auditoriaLogs = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            var result = await ApiService.GetAsync<List<AuditoriaResponse>>("api/Auditoria");
+            if (result.IsSuccess)
+            {
+                auditoriaLogs = result.Value?.OrderByDescending(x => x.Fecha).ToList() ?? new List<AuditoriaResponse>();
+            }
+            else
+            {
+                errorMessage = result.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

@@ -1,0 +1,291 @@
+@page "/enrolamiento"
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Enrolamiento Biométrico</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Gestión de Enrolamiento</h2>
+        <Button Color="ButtonColor.Primary" @onclick="ShowCreateModal">
+            <Icon Name="IconName.Plus" /> Nuevo Enrolamiento
+        </Button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true" @onclick="() => errorMessage = null">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="EnrolamientoResponse" Data="enrolamientos" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="EnrolamientoResponse" HeaderText="Empleado" Context="item">
+                    @GetEmpleadoName(item.IdEmpleado)
+                </GridColumn>
+                <GridColumn TItem="EnrolamientoResponse" HeaderText="Tipo" PropertyName="Tipo" Sortable="true" />
+                <GridColumn TItem="EnrolamientoResponse" HeaderText="Estado" Context="item">
+                    <Badge Color="@(item.Estado ? BadgeColor.Success : BadgeColor.Secondary)">
+                        @(item.Estado ? "Activo" : "Inactivo")
+                    </Badge>
+                </GridColumn>
+                <GridColumn TItem="EnrolamientoResponse" HeaderText="Datos" Context="item">
+                    <Badge Color="BadgeColor.Info">@item.IdentificadorBiometrico.Length bytes</Badge>
+                </GridColumn>
+                <GridColumn TItem="EnrolamientoResponse" HeaderText="Acciones" Context="item">
+                    <Button Color="ButtonColor.Warning" Size="ButtonSize.Small" @onclick="() => ShowEditModal(item)" Class="me-2" TooltipTitle="Editar">
+                        <Icon Name="IconName.Pencil" />
+                    </Button>
+                    <Button Color="ButtonColor.Danger" Size="ButtonSize.Small" @onclick="() => DeleteEnrolamiento(item.IdEnrolamiento)" TooltipTitle="Eliminar">
+                        <Icon Name="IconName.Trash" />
+                    </Button>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+<Modal @ref="modal" Title="@(isEditing ? "Editar Enrolamiento" : "Nuevo Enrolamiento")" IsVerticallyCentered="true">
+    <BodyTemplate>
+        <EditForm Model="@currentEnrolamiento" OnValidSubmit="SaveEnrolamiento">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label class="form-label">Empleado</label>
+                <InputSelect class="form-select" @bind-Value="currentEnrolamiento.IdEmpleado">
+                    <option value="0">-- Seleccione Empleado --</option>
+                    @foreach (var emp in empleados)
+                    {
+                        <option value="@emp.IdEmpleado">@emp.Nombres @emp.Apellidos</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Tipo Biométrico</label>
+                <InputSelect class="form-select" @bind-Value="currentEnrolamiento.Tipo">
+                    <option value="">-- Seleccione Tipo --</option>
+                    <option value="Huella">Huella Dactilar</option>
+                    <option value="Rostro">Reconocimiento Facial</option>
+                    <option value="Tarjeta">Tarjeta RFID</option>
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Archivo de Datos (Simulado)</label>
+                <InputFile OnChange="HandleFileSelected" class="form-control" />
+                @if (currentEnrolamiento.IdentificadorBiometrico != null && currentEnrolamiento.IdentificadorBiometrico.Length > 0)
+                {
+                    <div class="form-text text-success">
+                        Datos cargados: @currentEnrolamiento.IdentificadorBiometrico.Length bytes
+                    </div>
+                }
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
+                <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+            </div>
+        </EditForm>
+    </BodyTemplate>
+</Modal>
+
+@code {
+    private List<EnrolamientoResponse> enrolamientos = new();
+    private List<EmployeeResponse> empleados = new();
+    private UpdateEnrolamientoRequest currentEnrolamiento = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+    private bool isEditing = false;
+    private Modal modal = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            var enrolResult = await ApiService.GetAsync<List<EnrolamientoResponse>>("api/Enrolamiento");
+            if (enrolResult.IsSuccess)
+            {
+                enrolamientos = enrolResult.Value ?? new List<EnrolamientoResponse>();
+            }
+            else
+            {
+                errorMessage = enrolResult.Error;
+            }
+
+            var empResult = await ApiService.GetAsync<List<EmployeeResponse>>("api/Employee");
+            if (empResult.IsSuccess)
+            {
+                empleados = empResult.Value ?? new List<EmployeeResponse>();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetEmpleadoName(int idEmpleado)
+    {
+        var emp = empleados.FirstOrDefault(e => e.IdEmpleado == idEmpleado);
+        return emp != null ? $"{emp.Nombres} {emp.Apellidos}" : "Desconocido";
+    }
+
+    private async Task ShowCreateModal()
+    {
+        currentEnrolamiento = new UpdateEnrolamientoRequest { IdEmpleado = 0, Tipo = "Huella", IdentificadorBiometrico = Array.Empty<byte>() };
+        isEditing = false;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task ShowEditModal(EnrolamientoResponse enrolamiento)
+    {
+        currentEnrolamiento = new UpdateEnrolamientoRequest
+        {
+            IdEnrolamiento = enrolamiento.IdEnrolamiento,
+            IdEmpleado = enrolamiento.IdEmpleado,
+            Tipo = enrolamiento.Tipo,
+            IdentificadorBiometrico = enrolamiento.IdentificadorBiometrico
+        };
+        isEditing = true;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task HideModal()
+    {
+        await modal.HideAsync();
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            // Limit to 1MB for example
+            var maxFileSize = 1024 * 1024; 
+            if (file.Size > maxFileSize)
+            {
+                errorMessage = "El archivo es demasiado grande (max 1MB).";
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxFileSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            currentEnrolamiento.IdentificadorBiometrico = ms.ToArray();
+        }
+    }
+
+    private async Task SaveEnrolamiento()
+    {
+        if (currentEnrolamiento.IdEmpleado == 0)
+        {
+            errorMessage = "Debe seleccionar un empleado.";
+            return;
+        }
+
+        if (string.IsNullOrEmpty(currentEnrolamiento.Tipo))
+        {
+            errorMessage = "Debe seleccionar un tipo.";
+            return;
+        }
+
+        // Allow empty bytes for updates if not changed, but for create it might be needed.
+        // Let's assume it's required for create.
+        if (!isEditing && (currentEnrolamiento.IdentificadorBiometrico == null || currentEnrolamiento.IdentificadorBiometrico.Length == 0))
+        {
+            errorMessage = "Debe cargar un archivo de datos biométricos.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            if (isEditing)
+            {
+                var result = await ApiService.PutAsync<bool>($"api/Enrolamiento/{currentEnrolamiento.IdEnrolamiento}", currentEnrolamiento);
+                if (!result.IsSuccess) errorMessage = result.Error;
+            }
+            else
+            {
+                var createRequest = new CreateEnrolamientoRequest
+                {
+                    IdEmpleado = currentEnrolamiento.IdEmpleado,
+                    Tipo = currentEnrolamiento.Tipo,
+                    IdentificadorBiometrico = currentEnrolamiento.IdentificadorBiometrico
+                };
+                var result = await ApiService.PostAsync<EnrolamientoResponse>("api/Enrolamiento", createRequest);
+                if (!result.IsSuccess) errorMessage = result.Error;
+            }
+
+            if (string.IsNullOrEmpty(errorMessage))
+            {
+                await HideModal();
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteEnrolamiento(int id)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar este enrolamiento?"))
+        {
+            isLoading = true;
+            try
+            {
+                var result = await ApiService.DeleteAsync($"api/Enrolamiento/{id}");
+                if (result.IsSuccess)
+                {
+                    await LoadData();
+                }
+                else
+                {
+                    errorMessage = result.Error;
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+}

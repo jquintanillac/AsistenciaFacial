@@ -46,9 +46,10 @@ public class UbicacionPermitidaRepository : IUbicacionPermitidaRepository
             var query = "sp_UbicacionPermitida_INSERT";
             var parameters = new DynamicParameters();
             parameters.Add("IdEmpresa", request.IdEmpresa);
+            parameters.Add("Nombre", request.Nombre);
             parameters.Add("Latitud", request.Latitud);
             parameters.Add("Longitud", request.Longitud);
-            parameters.Add("RadioPermitido", request.RadioMetros);
+            parameters.Add("RadioMetros", request.RadioMetros);
 
             var id = await connection.QuerySingleAsync<int>(query, parameters, transaction, commandType: CommandType.StoredProcedure);
             
@@ -75,9 +76,10 @@ public class UbicacionPermitidaRepository : IUbicacionPermitidaRepository
             var parameters = new DynamicParameters();
             parameters.Add("IdUbicacion", request.IdUbicacion);
             parameters.Add("IdEmpresa", request.IdEmpresa);
+            parameters.Add("Nombre", request.Nombre);
             parameters.Add("Latitud", request.Latitud);
             parameters.Add("Longitud", request.Longitud);
-            parameters.Add("RadioPermitido", request.RadioMetros);
+            parameters.Add("RadioMetros", request.RadioMetros);
 
             await connection.ExecuteAsync(query, parameters, transaction, commandType: CommandType.StoredProcedure);
             

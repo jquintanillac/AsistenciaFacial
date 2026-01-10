@@ -1,0 +1,230 @@
+@page "/horarios"
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Horarios</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Horarios</h3>
+        <Button Color="ButtonColor.Primary" @onclick="ShowCreateModal">
+            <Icon Name="IconName.Plus" /> Nuevo Horario
+        </Button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="HorarioResponse" Data="horarios" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="HorarioResponse" HeaderText="Nombre" PropertyName="Nombre" Sortable="true" Context="horario">
+                    @horario.Nombre
+                </GridColumn>
+                <GridColumn TItem="HorarioResponse" HeaderText="Hora Entrada" PropertyName="HoraEntrada" Context="horario">
+                    @horario.HoraEntrada
+                </GridColumn>
+                <GridColumn TItem="HorarioResponse" HeaderText="Hora Salida" PropertyName="HoraSalida" Context="horario">
+                    @horario.HoraSalida
+                </GridColumn>
+                <GridColumn TItem="HorarioResponse" HeaderText="Tol. Entrada" PropertyName="ToleranciaEntrada" Context="horario">
+                    @horario.ToleranciaEntrada
+                </GridColumn>
+                <GridColumn TItem="HorarioResponse" HeaderText="Tol. Salida" PropertyName="ToleranciaSalida" Context="horario">
+                    @horario.ToleranciaSalida
+                </GridColumn>
+                <GridColumn TItem="HorarioResponse" HeaderText="Acciones" Context="item">
+                    <Button Color="ButtonColor.Warning" Size="ButtonSize.Small" @onclick="() => ShowEditModal(item)" Class="me-2" TooltipTitle="Editar">
+                        <Icon Name="IconName.Pencil" />
+                    </Button>
+                    <Button Color="ButtonColor.Danger" Size="ButtonSize.Small" @onclick="() => DeleteHorario(item.IdHorario)" TooltipTitle="Eliminar">
+                        <Icon Name="IconName.Trash" />
+                    </Button>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+<Modal @ref="modal" Title="@(isEditing ? "Editar Horario" : "Nuevo Horario")" IsVerticallyCentered="true">
+    <BodyTemplate>
+        <EditForm Model="@currentHorario" OnValidSubmit="SaveHorario">
+            <DataAnnotationsValidator />
+            
+            <div class="mb-3">
+                <label class="form-label">Nombre</label>
+                <InputText class="form-control" @bind-Value="currentHorario.Nombre" />
+                <ValidationMessage For="@(() => currentHorario.Nombre)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Hora Entrada (HH:mm:ss)</label>
+                <InputText type="time" class="form-control" @bind-Value="horaEntradaStr" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Hora Salida (HH:mm:ss)</label>
+                <InputText type="time" class="form-control" @bind-Value="horaSalidaStr" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Tolerancia Entrada (min)</label>
+                <InputNumber class="form-control" @bind-Value="currentHorario.ToleranciaEntrada" />
+                <ValidationMessage For="@(() => currentHorario.ToleranciaEntrada)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Tolerancia Salida (min)</label>
+                <InputNumber class="form-control" @bind-Value="currentHorario.ToleranciaSalida" />
+                <ValidationMessage For="@(() => currentHorario.ToleranciaSalida)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">ID Empresa</label>
+                <InputNumber class="form-control" @bind-Value="currentHorario.IdEmpresa" />
+                <ValidationMessage For="@(() => currentHorario.IdEmpresa)" />
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
+                <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+            </div>
+        </EditForm>
+    </BodyTemplate>
+</Modal>
+
+@code {
+    private IEnumerable<HorarioResponse>? horarios;
+    private UpdateHorarioRequest currentHorario = new();
+    private bool isLoading = true;
+    private bool isEditing = false;
+    private string? errorMessage;
+    private Modal modal = default!;
+    
+    // Bindings temporales para TimeSpan
+    private string horaEntradaStr = "08:00";
+    private string horaSalidaStr = "17:00";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHorarios();
+    }
+
+    private async Task LoadHorarios()
+    {
+        isLoading = true;
+        var result = await ApiService.GetAsync<IEnumerable<HorarioResponse>>("api/Horario");
+        if (result.IsSuccess)
+        {
+            horarios = result.Value;
+        }
+        else
+        {
+            errorMessage = result.Error;
+        }
+        isLoading = false;
+    }
+
+    private async Task ShowCreateModal()
+    {
+        currentHorario = new UpdateHorarioRequest();
+        horaEntradaStr = "08:00";
+        horaSalidaStr = "17:00";
+        isEditing = false;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task ShowEditModal(HorarioResponse horario)
+    {
+        currentHorario = new UpdateHorarioRequest
+        {
+            IdHorario = horario.IdHorario,
+            IdEmpresa = horario.IdEmpresa,
+            Nombre = horario.Nombre,
+            HoraEntrada = horario.HoraEntrada,
+            HoraSalida = horario.HoraSalida,
+            ToleranciaEntrada = horario.ToleranciaEntrada,
+            ToleranciaSalida = horario.ToleranciaSalida
+        };
+        horaEntradaStr = horario.HoraEntrada.ToString(@"hh\:mm");
+        horaSalidaStr = horario.HoraSalida.ToString(@"hh\:mm");
+        
+        isEditing = true;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task HideModal()
+    {
+        await modal.HideAsync();
+    }
+
+    private async Task SaveHorario()
+    {
+        isLoading = true;
+        errorMessage = null;
+        
+        // Parse TimeSpans
+        if (TimeSpan.TryParse(horaEntradaStr, out var he)) currentHorario.HoraEntrada = he;
+        if (TimeSpan.TryParse(horaSalidaStr, out var hs)) currentHorario.HoraSalida = hs;
+
+        if (isEditing)
+        {
+            var result = await ApiService.PutAsync<bool>($"api/Horario/{currentHorario.IdHorario}", currentHorario);
+            if (!result.IsSuccess) errorMessage = result.Error;
+        }
+        else
+        {
+            var createRequest = new CreateHorarioRequest
+            {
+                IdEmpresa = currentHorario.IdEmpresa,
+                Nombre = currentHorario.Nombre,
+                HoraEntrada = currentHorario.HoraEntrada,
+                HoraSalida = currentHorario.HoraSalida,
+                ToleranciaEntrada = currentHorario.ToleranciaEntrada,
+                ToleranciaSalida = currentHorario.ToleranciaSalida
+            };
+
+            var result = await ApiService.PostAsync<HorarioResponse>("api/Horario", createRequest);
+            if (!result.IsSuccess) errorMessage = result.Error;
+        }
+
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            await HideModal();
+            await LoadHorarios();
+        }
+        else
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteHorario(int id)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar este horario?"))
+        {
+            isLoading = true;
+            var result = await ApiService.DeleteAsync($"api/Horario/{id}");
+            if (result.IsSuccess)
+            {
+                await LoadHorarios();
+            }
+            else
+            {
+                errorMessage = result.Error;
+                isLoading = false;
+            }
+        }
+    }
+}

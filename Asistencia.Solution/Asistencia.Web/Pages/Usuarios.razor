@@ -1,0 +1,266 @@
+@page "/usuarios"
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Usuarios</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Gestión de Usuarios</h2>
+        <Button Color="ButtonColor.Primary" @onclick="ShowCreateModal">
+            <Icon Name="IconName.Plus" /> Nuevo Usuario
+        </Button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true" @onclick="() => errorMessage = null">@errorMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="UsuarioResponse" Data="usuarios" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="UsuarioResponse" HeaderText="Username" Sortable="true" Context="usuario">
+                    @usuario.Username
+                </GridColumn>
+                <GridColumn TItem="UsuarioResponse" HeaderText="Email" Context="usuario">
+                    @usuario.Email
+                </GridColumn>
+                <GridColumn TItem="UsuarioResponse" HeaderText="Empleado" Context="usuario">
+                    @GetEmpleadoName(usuario.IdEmpleado)
+                </GridColumn>
+                <GridColumn TItem="UsuarioResponse" HeaderText="Estado" Context="usuario">
+                    <Badge Color="@(usuario.Estado ? BadgeColor.Success : BadgeColor.Secondary)">
+                        @(usuario.Estado ? "Activo" : "Inactivo")
+                    </Badge>
+                </GridColumn>
+                <GridColumn TItem="UsuarioResponse" HeaderText="Acciones" Context="usuario">
+                    <Button Color="ButtonColor.Warning" Size="ButtonSize.Small" @onclick="() => ShowEditModal(usuario)" Class="me-2" TooltipTitle="Editar">
+                        <Icon Name="IconName.Pencil" />
+                    </Button>
+                    <Button Color="ButtonColor.Danger" Size="ButtonSize.Small" @onclick="() => DeleteUsuario(usuario.IdUsuario)" TooltipTitle="Eliminar">
+                        <Icon Name="IconName.Trash" />
+                    </Button>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+<Modal @ref="modal" Title="@(isEditing ? "Editar Usuario" : "Nuevo Usuario")" IsVerticallyCentered="true">
+    <BodyTemplate>
+        <EditForm Model="@currentUsuario" OnValidSubmit="SaveUsuario">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label class="form-label">Empleado</label>
+                <InputSelect class="form-select" @bind-Value="currentUsuario.IdEmpleado">
+                    <option value="0">-- Seleccione Empleado --</option>
+                    @foreach (var emp in empleados)
+                    {
+                        <option value="@emp.IdEmpleado">@emp.Nombres @emp.Apellidos</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <InputText class="form-control" @bind-Value="currentUsuario.Username" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <InputText class="form-control" @bind-Value="currentUsuario.Email" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Password @(isEditing ? "(Dejar en blanco para no cambiar)" : "")</label>
+                <InputText type="password" class="form-control" @bind-Value="currentUsuario.Password" />
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
+                <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+            </div>
+        </EditForm>
+    </BodyTemplate>
+</Modal>
+
+@code {
+    private List<UsuarioResponse> usuarios = new();
+    private List<EmployeeResponse> empleados = new();
+    private UpdateUsuarioRequest currentUsuario = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+    private bool isEditing = false;
+    private Modal modal = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            var userResult = await ApiService.GetAsync<List<UsuarioResponse>>("api/Usuario");
+            if (userResult.IsSuccess)
+            {
+                usuarios = userResult.Value ?? new List<UsuarioResponse>();
+            }
+            else
+            {
+                errorMessage = userResult.Error;
+            }
+
+            var empResult = await ApiService.GetAsync<List<EmployeeResponse>>("api/Employee");
+            if (empResult.IsSuccess)
+            {
+                empleados = empResult.Value ?? new List<EmployeeResponse>();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetEmpleadoName(int idEmpleado)
+    {
+        var emp = empleados.FirstOrDefault(e => e.IdEmpleado == idEmpleado);
+        return emp != null ? $"{emp.Nombres} {emp.Apellidos}" : "Desconocido";
+    }
+
+    private async Task ShowCreateModal()
+    {
+        currentUsuario = new UpdateUsuarioRequest { IdEmpleado = 0 };
+        isEditing = false;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task ShowEditModal(UsuarioResponse usuario)
+    {
+        currentUsuario = new UpdateUsuarioRequest
+        {
+            IdUsuario = usuario.IdUsuario,
+            IdEmpleado = usuario.IdEmpleado,
+            Username = usuario.Username,
+            Email = usuario.Email,
+            Password = null // Don't show password
+        };
+        isEditing = true;
+        errorMessage = null;
+        await modal.ShowAsync();
+    }
+
+    private async Task HideModal()
+    {
+        await modal.HideAsync();
+    }
+
+    private async Task SaveUsuario()
+    {
+        if (currentUsuario.IdEmpleado == 0)
+        {
+            errorMessage = "Debe seleccionar un empleado.";
+            return;
+        }
+
+        if (!isEditing && string.IsNullOrWhiteSpace(currentUsuario.Password))
+        {
+            errorMessage = "La contraseña es obligatoria para nuevos usuarios.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            if (isEditing)
+            {
+                var result = await ApiService.PutAsync<bool>($"api/Usuario/{currentUsuario.IdUsuario}", currentUsuario);
+                if (!result.IsSuccess) errorMessage = result.Error;
+            }
+            else
+            {
+                var createRequest = new CreateUsuarioRequest
+                {
+                    IdEmpleado = currentUsuario.IdEmpleado,
+                    Username = currentUsuario.Username,
+                    Email = currentUsuario.Email,
+                    Password = currentUsuario.Password!
+                };
+                var result = await ApiService.PostAsync<UsuarioResponse>("api/Usuario", createRequest);
+                if (!result.IsSuccess) errorMessage = result.Error;
+            }
+
+            if (string.IsNullOrEmpty(errorMessage))
+            {
+                await HideModal();
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteUsuario(int idUsuario)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar este usuario?"))
+        {
+            isLoading = true;
+            try
+            {
+                var result = await ApiService.DeleteAsync($"api/Usuario/{idUsuario}");
+                if (result.IsSuccess)
+                {
+                    await LoadData();
+                }
+                else
+                {
+                    errorMessage = result.Error;
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+    
+    // Kept CloseModal for backward compatibility if needed, but HideModal is preferred
+    private async Task CloseModal() => await HideModal();
+}
+
+

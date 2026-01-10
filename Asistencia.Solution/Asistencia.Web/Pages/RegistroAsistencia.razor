@@ -1,0 +1,273 @@
+@page "/registro-asistencia"
+@page "/asistencias"
+@using Asistencia.Shared.DTOs.Requests
+@using Asistencia.Shared.DTOs.Responses
+@using Asistencia.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IApiService ApiService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Registro de Asistencia</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Mis Asistencias</h2>
+        <Button Color="ButtonColor.Primary" @onclick="ShowMarcarModal" Disabled="@(currentIdEmpleado == 0)">
+            <Icon Name="IconName.Fingerprint" Class="me-2" /> Registrar Asistencia
+        </Button>
+    </div>
+
+    @if (currentIdEmpleado == 0 && !isLoadingUser)
+    {
+        <Alert Color="AlertColor.Warning">
+            <Icon Name="IconName.ExclamationTriangle" Class="me-2" />
+            No se encontró un empleado asociado a su usuario. Por favor contacte al administrador.
+        </Alert>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <Alert Color="AlertColor.Danger" Dismissable="true" @onclick="() => errorMessage = null">@errorMessage</Alert>
+    }
+    
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <Alert Color="AlertColor.Success" Dismissable="true" @onclick="() => successMessage = null">@successMessage</Alert>
+    }
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center">
+            <Spinner Color="SpinnerColor.Primary" />
+        </div>
+    }
+    else
+    {
+        <Grid TItem="RegistroAsistenciaResponse" Data="asistencias" Class="table table-hover table-bordered table-striped" Responsive="true">
+            <GridColumns>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Fecha" PropertyName="Fecha" Sortable="true">
+                    @context.Fecha.ToShortDateString()
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Entrada" Context="item">
+                    @(item.HoraEntrada?.ToString("HH:mm:ss") ?? "--:--:--")
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Salida" Context="item">
+                    @(item.HoraSalida?.ToString("HH:mm:ss") ?? "--:--:--")
+                </GridColumn>
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Horas" PropertyName="HorasTrabajadas" />
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Tarde (min)" PropertyName="MinutosTarde" />
+                <GridColumn TItem="RegistroAsistenciaResponse" HeaderText="Estado" Context="item">
+                    <Badge Color="@GetEstadoBadgeColor(item.EstadoAsistencia)">@item.EstadoAsistencia</Badge>
+                </GridColumn>
+            </GridColumns>
+        </Grid>
+    }
+</div>
+
+<Modal @ref="modal" Title="Registrar Asistencia" IsVerticallyCentered="true">
+    <BodyTemplate>
+        <div class="text-center mb-4">
+            <h3>@DateTime.Now.ToString("HH:mm:ss")</h3>
+            <p class="text-muted">@DateTime.Now.ToLongDateString()</p>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Tipo de Marcación</label>
+            <div class="d-flex justify-content-center gap-3">
+                <Button Color="ButtonColor.Success" Size="ButtonSize.Large" Class="@(tipoMarcacion == "Entrada" ? "border-3 border-dark" : "")" @onclick='() => tipoMarcacion = "Entrada"'>
+                    <Icon Name="IconName.BoxArrowInRight" Class="me-2" /> Entrada
+                </Button>
+                <Button Color="ButtonColor.Danger" Size="ButtonSize.Large" Class="@(tipoMarcacion == "Salida" ? "border-3 border-dark" : "")" @onclick='() => tipoMarcacion = "Salida"'>
+                    <Icon Name="IconName.BoxArrowRight" Class="me-2" /> Salida
+                </Button>
+            </div>
+        </div>
+
+        @if (isGettingLocation)
+        {
+            <div class="text-center text-info">
+                <Spinner Type="SpinnerType.Border" Size="SpinnerSize.Small" /> Obteniendo ubicación...
+            </div>
+        }
+        else if (currentLocation != null)
+        {
+             <div class="alert alert-success py-1 text-center">
+                <small><Icon Name="IconName.GeoAltFill" /> Ubicación obtenida (@currentLocation.Latitude.ToString("F4"), @currentLocation.Longitude.ToString("F4"))</small>
+            </div>
+        }
+    </BodyTemplate>
+    <FooterTemplate>
+        <Button Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
+        <Button Color="ButtonColor.Primary" @onclick="ConfirmarMarcacion" Disabled="@(string.IsNullOrEmpty(tipoMarcacion) || isGettingLocation || currentLocation == null || isSaving)">
+             @if (isSaving)
+            {
+                <Spinner Class="me-2" Type="SpinnerType.Border" Size="SpinnerSize.Small" />
+            }
+            Confirmar
+        </Button>
+    </FooterTemplate>
+</Modal>
+
+@code {
+    private List<RegistroAsistenciaResponse> asistencias = new();
+    private int currentIdEmpleado = 0;
+    private bool isLoading = true;
+    private bool isLoadingUser = true;
+    private bool isSaving = false;
+    private bool isGettingLocation = false;
+    private string? errorMessage;
+    private string? successMessage;
+    
+    private Modal modal = default!;
+    private string tipoMarcacion = "";
+    private LocationModel? currentLocation;
+
+    private class LocationModel
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public double Accuracy { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        if (currentIdEmpleado > 0)
+        {
+            await LoadAsistencias();
+        }
+        isLoading = false;
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                var username = user.Identity.Name;
+                var result = await ApiService.GetAsync<IEnumerable<UsuarioResponse>>("api/Usuario");
+                if (result.IsSuccess && result.Value != null)
+                {
+                    var currentUser = result.Value.FirstOrDefault(u => u.Username == username);
+                    if (currentUser != null)
+                    {
+                        currentIdEmpleado = currentUser.IdEmpleado;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error al cargar usuario: " + ex.Message;
+        }
+        finally
+        {
+            isLoadingUser = false;
+        }
+    }
+
+    private async Task LoadAsistencias()
+    {
+        var result = await ApiService.GetAsync<IEnumerable<RegistroAsistenciaResponse>>("api/RegistroAsistencia");
+        if (result.IsSuccess)
+        {
+            asistencias = result.Value?.Where(a => a.IdEmpleado == currentIdEmpleado).OrderByDescending(a => a.Fecha).ToList() ?? new();
+        }
+        else
+        {
+            errorMessage = result.Error;
+        }
+    }
+
+    private async Task ShowMarcarModal()
+    {
+        tipoMarcacion = "";
+        currentLocation = null;
+        errorMessage = null;
+        successMessage = null;
+        await modal.ShowAsync();
+        
+        await GetLocation();
+    }
+
+    private async Task HideModal()
+    {
+        await modal.HideAsync();
+    }
+
+    private async Task GetLocation()
+    {
+        isGettingLocation = true;
+        try
+        {
+            currentLocation = await JSRuntime.InvokeAsync<LocationModel>("getCoords");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error al obtener ubicación: " + ex.Message;
+            // Don't close modal, let user retry or see error
+        }
+        finally
+        {
+            isGettingLocation = false;
+        }
+    }
+
+    private async Task ConfirmarMarcacion()
+    {
+        if (currentLocation == null) return;
+        
+        isSaving = true;
+        try
+        {
+            var request = new CreateMarcacionRequest
+            {
+                IdEmpleado = currentIdEmpleado,
+                FechaHora = DateTime.Now,
+                TipoMarcacion = tipoMarcacion,
+                Latitud = (decimal)currentLocation.Latitude,
+                Longitud = (decimal)currentLocation.Longitude,
+                EsValida = true 
+            };
+
+            var result = await ApiService.PostAsync<MarcacionResponse>("api/Marcacion", request);
+            
+            if (result.IsSuccess)
+            {
+                successMessage = "Asistencia registrada correctamente.";
+                await HideModal();
+                await LoadAsistencias();
+            }
+            else
+            {
+                errorMessage = result.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private BadgeColor GetEstadoBadgeColor(string estado)
+    {
+        return estado switch
+        {
+            "Presente" => BadgeColor.Success,
+            "Tarde" => BadgeColor.Warning,
+            "Ausente" => BadgeColor.Danger,
+            _ => BadgeColor.Secondary
+        };
+    }
+}
