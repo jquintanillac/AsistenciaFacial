@@ -1,5 +1,6 @@
 using Asistencia.Application.Services;
 using Asistencia.Shared.DTOs.Requests;
+using Asistencia.Api.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -66,6 +67,60 @@ public class EnrolamientoController : ControllerBase
         var result = await _enrolamientoService.CreateAsync(request);
         if (!result.IsSuccess) return BadRequest(result.Error);
         return CreatedAtAction(nameof(GetById), new { id = result.Value }, result.Value);
+    }
+
+    /// <summary>
+    /// Crea un nuevo enrolamiento facial con imagen y descriptor.
+    /// </summary>
+    [HttpPost("facial")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateFacial([FromForm] EnrolamientoUploadRequest request)
+    {
+        if (request.Imagen == null || request.Imagen.Length == 0)
+            return BadRequest("No image uploaded.");
+
+        try
+        {
+            // 1. Save Image
+            var uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "enrolamiento", request.IdEmpleado.ToString());
+            if (!Directory.Exists(uploadPath))
+                Directory.CreateDirectory(uploadPath);
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(request.Imagen.FileName)}";
+            var filePath = Path.Combine(uploadPath, fileName);
+            
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await request.Imagen.CopyToAsync(stream);
+            }
+
+            var relativePath = Path.Combine("enrolamiento", request.IdEmpleado.ToString(), fileName).Replace("\\", "/");
+
+            // 2. Create Enrolamiento
+            var enrolamientoRequest = new CreateEnrolamientoRequest
+            {
+                IdEmpleado = request.IdEmpleado,
+                Tipo = "Rostro",
+                RutaImagen = relativePath,
+                DescriptorFacial = request.DescriptorFacial,
+                IdentificadorBiometrico = Array.Empty<byte>()
+            };
+
+            var result = await _enrolamientoService.CreateAsync(enrolamientoRequest);
+            if (!result.IsSuccess) 
+            {
+                // Cleanup file if DB insert fails
+                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+                return BadRequest(result.Error);
+            }
+
+            return CreatedAtAction(nameof(GetById), new { id = result.Value }, result.Value);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error uploading file: {ex.Message}");
+        }
     }
 
     /// <summary>

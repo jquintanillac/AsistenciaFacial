@@ -48,6 +48,8 @@ public class EnrolamientoRepository : IEnrolamientoRepository
             parameters.Add("IdEmpleado", request.IdEmpleado);
             parameters.Add("Tipo", request.Tipo);
             parameters.Add("IdentificadorBiometrico", request.IdentificadorBiometrico);
+            parameters.Add("RutaImagen", request.RutaImagen);
+            parameters.Add("DescriptorFacial", request.DescriptorFacial);
 
             var id = await connection.QuerySingleAsync<int>(query, parameters, transaction, commandType: CommandType.StoredProcedure);
             

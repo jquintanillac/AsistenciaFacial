@@ -13,7 +13,14 @@ public class CreateEnrolamientoRequestValidator : AbstractValidator<CreateEnrola
             .NotEmpty().WithMessage("El tipo es requerido")
             .MaximumLength(50).WithMessage("El tipo no puede exceder 50 caracteres");
         RuleFor(x => x.IdentificadorBiometrico)
-            .NotEmpty().WithMessage("El identificador biométrico es requerido");
+            .NotEmpty()
+            .When(x => x.Tipo != "Rostro")
+            .WithMessage("El identificador biométrico es requerido para este tipo de enrolamiento");
+
+        RuleFor(x => x.DescriptorFacial)
+            .NotEmpty()
+            .When(x => x.Tipo == "Rostro")
+            .WithMessage("El descriptor facial es requerido para enrolamiento facial");
     }
 }
 

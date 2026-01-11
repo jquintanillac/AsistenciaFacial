@@ -2,10 +2,14 @@
 @using Asistencia.Shared.DTOs.Requests
 @using Asistencia.Shared.DTOs.Responses
 @using Asistencia.Web.Services
+@using System.Text.Json
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Configuration
+@implements IAsyncDisposable
 @attribute [Authorize]
 @inject IApiService ApiService
 @inject IJSRuntime JSRuntime
+@inject IConfiguration Configuration
 
 <PageTitle>Enrolamiento Biométrico</PageTitle>
 
@@ -42,7 +46,16 @@
                     </Badge>
                 </GridColumn>
                 <GridColumn TItem="EnrolamientoResponse" HeaderText="Datos" Context="item">
-                    <Badge Color="BadgeColor.Info">@item.IdentificadorBiometrico.Length bytes</Badge>
+                    @if (!string.IsNullOrEmpty(item.RutaImagen))
+                    {
+                         <Button Color="ButtonColor.Info" Size="ButtonSize.Small" TooltipTitle="Ver Imagen" @onclick="() => ShowImage(item.RutaImagen)">
+                            <Icon Name="IconName.Image" /> Ver
+                        </Button>
+                    }
+                    else
+                    {
+                        <Badge Color="BadgeColor.Info">@item.IdentificadorBiometrico.Length bytes</Badge>
+                    }
                 </GridColumn>
                 <GridColumn TItem="EnrolamientoResponse" HeaderText="Acciones" Context="item">
                     <Button Color="ButtonColor.Warning" Size="ButtonSize.Small" @onclick="() => ShowEditModal(item)" Class="me-2" TooltipTitle="Editar">
@@ -57,50 +70,131 @@
     }
 </div>
 
-<Modal @ref="modal" Title="@(isEditing ? "Editar Enrolamiento" : "Nuevo Enrolamiento")" IsVerticallyCentered="true">
+<Modal @ref="modal" Title="@(isEditing ? "Editar Enrolamiento" : "Nuevo Enrolamiento")" IsVerticallyCentered="true" Size="ModalSize.Large">
     <BodyTemplate>
         <EditForm Model="@currentEnrolamiento" OnValidSubmit="SaveEnrolamiento">
             <DataAnnotationsValidator />
             <ValidationSummary />
 
-            <div class="mb-3">
-                <label class="form-label">Empleado</label>
-                <InputSelect class="form-select" @bind-Value="currentEnrolamiento.IdEmpleado">
-                    <option value="0">-- Seleccione Empleado --</option>
-                    @foreach (var emp in empleados)
-                    {
-                        <option value="@emp.IdEmpleado">@emp.Nombres @emp.Apellidos</option>
-                    }
-                </InputSelect>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Tipo Biométrico</label>
-                <InputSelect class="form-select" @bind-Value="currentEnrolamiento.Tipo">
-                    <option value="">-- Seleccione Tipo --</option>
-                    <option value="Huella">Huella Dactilar</option>
-                    <option value="Rostro">Reconocimiento Facial</option>
-                    <option value="Tarjeta">Tarjeta RFID</option>
-                </InputSelect>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Archivo de Datos (Simulado)</label>
-                <InputFile OnChange="HandleFileSelected" class="form-control" />
-                @if (currentEnrolamiento.IdentificadorBiometrico != null && currentEnrolamiento.IdentificadorBiometrico.Length > 0)
-                {
-                    <div class="form-text text-success">
-                        Datos cargados: @currentEnrolamiento.IdentificadorBiometrico.Length bytes
+            <div class="row">
+                <div class="col-md-6">
+                     <div class="mb-3">
+                        <label class="form-label">Empleado</label>
+                        <InputSelect class="form-select" @bind-Value="currentEnrolamiento.IdEmpleado" disabled="@isEditing">
+                            <option value="0">-- Seleccione Empleado --</option>
+                            @foreach (var emp in empleados)
+                            {
+                                <option value="@emp.IdEmpleado">@emp.Nombres @emp.Apellidos</option>
+                            }
+                        </InputSelect>
                     </div>
-                }
+
+                    <div class="mb-3">
+                        <label class="form-label">Tipo Biométrico</label>
+                        <InputSelect class="form-select" @bind-Value="currentEnrolamiento.Tipo" disabled="@isEditing">
+                            <option value="">-- Seleccione Tipo --</option>
+                           @*  <option value="Huella">Huella Dactilar</option> *@
+                            <option value="Rostro">Reconocimiento Facial</option>
+                          @*   <option value="Tarjeta">Tarjeta RFID</option> *@
+                        </InputSelect>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                     @if (currentEnrolamiento.Tipo == "Rostro" && !isEditing)
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header">Captura Facial</div>
+                            <div class="card-body text-center bg-dark p-2">
+                                <div style="position: relative; display: inline-block; width: 320px; height: 240px; background: #000;">
+                                    <video id="video" width="320" height="240" autoplay muted style="display: @(isCameraRunning ? "block" : "none")"></video>
+                                    <canvas id="canvas" style="position: absolute; top: 0; left: 0; display: @(isCameraRunning ? "block" : "none")"></canvas>
+                                    @if (!isCameraRunning)
+                                    {
+                                        <div class="d-flex align-items-center justify-content-center h-100 text-white flex-column">
+                                            <Icon Name="IconName.CameraVideo" Size="IconSize.x2" />
+                                            <small class="mt-2">Cámara inactiva</small>
+                                        </div>
+                                    }
+                                </div>
+                                
+                                <div class="mt-2 d-flex justify-content-center gap-2">
+                                    @if (!isCameraRunning)
+                                    {
+                                        <Button Color="ButtonColor.Primary" @onclick="StartCamera" Size="ButtonSize.Small" Disabled="@isModelsLoading">
+                                            @if (isModelsLoading) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            <Icon Name="IconName.Camera" /> Iniciar Cámara
+                                        </Button>
+                                    }
+                                    else
+                                    {
+                                        <Button Color="ButtonColor.Danger" @onclick="StopCamera" Size="ButtonSize.Small">
+                                            <Icon Name="IconName.StopCircle" /> Detener
+                                        </Button>
+                                    }
+                                </div>
+                                
+                                @if (isCameraRunning)
+                                {
+                                    <div class="mt-2">
+                                        @if (isFaceDetected)
+                                        {
+                                            <Badge Color="BadgeColor.Success">Rostro Detectado</Badge>
+                                        }
+                                        else
+                                        {
+                                            <Badge Color="BadgeColor.Warning">Buscando rostro...</Badge>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else if (!isEditing)
+                    {
+                         <div class="mb-3">
+                            <label class="form-label">Archivo de Datos (Simulado)</label>
+                            <InputFile OnChange="HandleFileSelected" class="form-control" />
+                            @if (currentEnrolamiento.IdentificadorBiometrico != null && currentEnrolamiento.IdentificadorBiometrico.Length > 0)
+                            {
+                                <div class="form-text text-success">
+                                    Datos cargados: @currentEnrolamiento.IdentificadorBiometrico.Length bytes
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-4">
                 <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" @onclick="HideModal">Cancelar</Button>
-                <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+                @if (currentEnrolamiento.Tipo == "Rostro" && !isEditing)
+                {
+                     <Button Type="ButtonType.Button" Color="ButtonColor.Success" @onclick="CaptureAndEnroll" Disabled="@(!isFaceDetected)">
+                        <Icon Name="IconName.PersonCheck" /> Enrolar Rostro
+                    </Button>
+                }
+                else
+                {
+                    <Button Type="ButtonType.Submit" Color="ButtonColor.Success">Guardar</Button>
+                }
             </div>
         </EditForm>
     </BodyTemplate>
+</Modal>
+
+<Modal @ref="imageModal" Title="Imagen Enrolada" IsVerticallyCentered="true">
+    <BodyTemplate>
+        <div class="text-center">
+            @if (!string.IsNullOrEmpty(selectedImage))
+            {
+                <img src="@selectedImage" class="img-fluid" alt="Rostro" />
+            }
+        </div>
+    </BodyTemplate>
+    <FooterTemplate>
+        <Button Color="ButtonColor.Secondary" @onclick="async () => await imageModal.HideAsync()">Cerrar</Button>
+    </FooterTemplate>
 </Modal>
 
 @code {
@@ -111,10 +205,45 @@
     private string? errorMessage;
     private bool isEditing = false;
     private Modal modal = default!;
+    private Modal imageModal = default!;
+    private string? selectedImage;
+
+    // Face Recognition
+    private IJSObjectReference? module;
+    private DotNetObjectReference<Enrolamiento>? dotNetHelper;
+    private bool isCameraRunning = false;
+    private bool isFaceDetected = false;
+    private bool isModelsLoading = false;
+    private float[]? currentDescriptor;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try 
+            {
+                isModelsLoading = true;
+                module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/face/face-service.js");
+                dotNetHelper = DotNetObjectReference.Create(this);
+                // Assume models are in wwwroot/models
+                await module.InvokeVoidAsync("initFaceService", dotNetHelper, "/models");
+                isModelsLoading = false;
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                // errorMessage = "Error cargando módulo facial: " + ex.Message;
+                // Don't show error immediately as models might be missing but page should load
+                Console.WriteLine("Error loading face module: " + ex.Message);
+                isModelsLoading = false;
+                StateHasChanged();
+            }
+        }
     }
 
     private async Task LoadData()
@@ -153,12 +282,28 @@
         var emp = empleados.FirstOrDefault(e => e.IdEmpleado == idEmpleado);
         return emp != null ? $"{emp.Nombres} {emp.Apellidos}" : "Desconocido";
     }
+    
+    private async Task ShowImage(string path)
+    {
+        // Path needs to be absolute or relative to root
+        var baseUrl = Configuration["ApiBaseUrl"];
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            // Fallback or handle error
+            baseUrl = "https://localhost:7210";
+        }
+        
+        selectedImage = $"{baseUrl}/{path}";
+        await imageModal.ShowAsync();
+    }
 
     private async Task ShowCreateModal()
     {
-        currentEnrolamiento = new UpdateEnrolamientoRequest { IdEmpleado = 0, Tipo = "Huella", IdentificadorBiometrico = Array.Empty<byte>() };
+        currentEnrolamiento = new UpdateEnrolamientoRequest { IdEmpleado = 0, Tipo = "Rostro", IdentificadorBiometrico = Array.Empty<byte>() };
         isEditing = false;
         errorMessage = null;
+        isFaceDetected = false;
+        currentDescriptor = null;
         await modal.ShowAsync();
     }
 
@@ -178,7 +323,99 @@
 
     private async Task HideModal()
     {
+        await StopCamera();
         await modal.HideAsync();
+    }
+    
+    // Face Recognition Methods
+    private async Task StartCamera()
+    {
+        if (module != null)
+        {
+            try {
+                await module.InvokeVoidAsync("startVideo", "video", "canvas");
+                isCameraRunning = true;
+            }
+            catch (Exception ex) {
+                errorMessage = "Error iniciando cámara: " + ex.Message;
+            }
+        }
+    }
+
+    private async Task StopCamera()
+    {
+        if (module != null && isCameraRunning)
+        {
+            await module.InvokeVoidAsync("stopVideo", "video");
+            isCameraRunning = false;
+            isFaceDetected = false;
+        }
+    }
+    
+    [JSInvokable]
+    public void OnFaceDetected(float[] descriptor)
+    {
+        if (!isFaceDetected) {
+            isFaceDetected = true;
+            StateHasChanged();
+        }
+        currentDescriptor = descriptor;
+    }
+
+    [JSInvokable]
+    public void OnFaceLost()
+    {
+        if (isFaceDetected) {
+            isFaceDetected = false;
+            currentDescriptor = null;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task CaptureAndEnroll()
+    {
+        if (!isFaceDetected || currentDescriptor == null) return;
+        
+        if (currentEnrolamiento.IdEmpleado == 0)
+        {
+            errorMessage = "Debe seleccionar un empleado.";
+            return;
+        }
+
+        try 
+        {
+            // Capture Image
+            var base64Image = await module!.InvokeAsync<string>("captureImage", "video");
+            // Remove prefix "data:image/jpeg;base64,"
+            var base64Data = base64Image.Split(',')[1];
+            var imageBytes = Convert.FromBase64String(base64Data);
+            
+            // Prepare Multipart Content
+            var content = new MultipartFormDataContent();
+            content.Add(new StringContent(currentEnrolamiento.IdEmpleado.ToString()), "IdEmpleado");
+            content.Add(new StringContent(JsonSerializer.Serialize(currentDescriptor)), "DescriptorFacial");
+            
+            var fileContent = new ByteArrayContent(imageBytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            content.Add(fileContent, "Imagen", $"face_{currentEnrolamiento.IdEmpleado}_{DateTime.Now.Ticks}.jpg");
+
+            var result = await ApiService.PostMultipartAsync<EnrolamientoResponse>("api/Enrolamiento/facial", content);
+            
+            if (result.IsSuccess)
+            {
+                await HideModal();
+                await LoadData();
+                await JSRuntime.InvokeVoidAsync("alert", "Enrolamiento facial exitoso.");
+            }
+            else
+            {
+                errorMessage = result.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error al enrolar: " + ex.Message;
+        }
     }
 
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
@@ -186,7 +423,6 @@
         var file = e.File;
         if (file != null)
         {
-            // Limit to 1MB for example
             var maxFileSize = 1024 * 1024; 
             if (file.Size > maxFileSize)
             {
@@ -203,89 +439,75 @@
 
     private async Task SaveEnrolamiento()
     {
-        if (currentEnrolamiento.IdEmpleado == 0)
+        // Fallback for non-facial or manual save
+        if (currentEnrolamiento.Tipo == "Rostro" && !isEditing)
         {
-            errorMessage = "Debe seleccionar un empleado.";
+            // Should use CaptureAndEnroll
             return;
         }
 
-        if (string.IsNullOrEmpty(currentEnrolamiento.Tipo))
+        if (isEditing)
         {
-            errorMessage = "Debe seleccionar un tipo.";
-            return;
+             var result = await ApiService.PutAsync("api/Enrolamiento/" + currentEnrolamiento.IdEnrolamiento, currentEnrolamiento);
+             if (result.IsSuccess)
+             {
+                 await HideModal();
+                 await LoadData();
+             }
+             else
+             {
+                 errorMessage = result.Error;
+             }
         }
-
-        // Allow empty bytes for updates if not changed, but for create it might be needed.
-        // Let's assume it's required for create.
-        if (!isEditing && (currentEnrolamiento.IdentificadorBiometrico == null || currentEnrolamiento.IdentificadorBiometrico.Length == 0))
+        else
         {
-            errorMessage = "Debe cargar un archivo de datos biométricos.";
-            return;
-        }
-
-        isLoading = true;
-        errorMessage = null;
-
-        try
-        {
-            if (isEditing)
-            {
-                var result = await ApiService.PutAsync<bool>($"api/Enrolamiento/{currentEnrolamiento.IdEnrolamiento}", currentEnrolamiento);
-                if (!result.IsSuccess) errorMessage = result.Error;
-            }
-            else
-            {
-                var createRequest = new CreateEnrolamientoRequest
-                {
-                    IdEmpleado = currentEnrolamiento.IdEmpleado,
-                    Tipo = currentEnrolamiento.Tipo,
-                    IdentificadorBiometrico = currentEnrolamiento.IdentificadorBiometrico
-                };
-                var result = await ApiService.PostAsync<EnrolamientoResponse>("api/Enrolamiento", createRequest);
-                if (!result.IsSuccess) errorMessage = result.Error;
-            }
-
-            if (string.IsNullOrEmpty(errorMessage))
-            {
-                await HideModal();
-                await LoadData();
-            }
-        }
-        catch (Exception ex)
-        {
-            errorMessage = ex.Message;
-        }
-        finally
-        {
-            isLoading = false;
+             var request = new CreateEnrolamientoRequest
+             {
+                 IdEmpleado = currentEnrolamiento.IdEmpleado,
+                 Tipo = currentEnrolamiento.Tipo,
+                 IdentificadorBiometrico = currentEnrolamiento.IdentificadorBiometrico ?? Array.Empty<byte>()
+             };
+             
+             var result = await ApiService.PostAsync<int>("api/Enrolamiento", request);
+             if (result.IsSuccess)
+             {
+                 await HideModal();
+                 await LoadData();
+             }
+             else
+             {
+                 errorMessage = result.Error;
+             }
         }
     }
 
     private async Task DeleteEnrolamiento(int id)
     {
-        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar este enrolamiento?"))
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar este enrolamiento?");
+        if (confirmed)
         {
-            isLoading = true;
-            try
+            var result = await ApiService.DeleteAsync($"api/Enrolamiento/{id}");
+            if (result.IsSuccess)
             {
-                var result = await ApiService.DeleteAsync($"api/Enrolamiento/{id}");
-                if (result.IsSuccess)
-                {
-                    await LoadData();
-                }
-                else
-                {
-                    errorMessage = result.Error;
-                }
+                await LoadData();
             }
-            catch (Exception ex)
+            else
             {
-                errorMessage = ex.Message;
+                errorMessage = result.Error;
             }
-            finally
-            {
-                isLoading = false;
-            }
+        }
+    }
+    
+    public async ValueTask DisposeAsync()
+    {
+        if (module != null)
+        {
+             await StopCamera();
+             await module.DisposeAsync();
+        }
+        if (dotNetHelper != null)
+        {
+            dotNetHelper.Dispose();
         }
     }
 }

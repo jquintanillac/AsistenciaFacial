@@ -12,6 +12,7 @@ public interface IApiService
     Task<Result<bool>> PostAsync(string endpoint, object data);
     Task<Result<T>> PutAsync<T>(string endpoint, object data);
     Task<Result<bool>> PutAsync(string endpoint, object data);
+    Task<Result<T>> PostMultipartAsync<T>(string endpoint, MultipartFormDataContent content);
     Task<Result<bool>> DeleteAsync(string endpoint);
 }
 
@@ -79,6 +80,19 @@ public class ApiService : IApiService
         try
         {
             var response = await _httpClient.PutAsJsonAsync(endpoint, data);
+            return await HandleResponse<T>(response);
+        }
+        catch (Exception ex)
+        {
+            return Result<T>.Failure($"Error de conexión: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<T>> PostMultipartAsync<T>(string endpoint, MultipartFormDataContent content)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync(endpoint, content);
             return await HandleResponse<T>(response);
         }
         catch (Exception ex)

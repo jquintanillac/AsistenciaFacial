@@ -156,6 +156,9 @@
         errorMessage = null;
         await modal.ShowAsync();
         
+        // Pequeño retardo para asegurar que el modal y el div del mapa estén renderizados
+        await Task.Delay(300);
+
         // Inicializar mapa después de mostrar el modal
         // Usamos una ubicación por defecto (Lima, Perú) si no hay coordenadas
         await JSRuntime.InvokeVoidAsync("setDotNetHelper", dotNetHelper);
@@ -176,6 +179,9 @@
         isEditing = true;
         errorMessage = null;
         await modal.ShowAsync();
+
+        // Pequeño retardo para asegurar que el modal y el div del mapa estén renderizados
+        await Task.Delay(300);
 
         // Inicializar mapa con las coordenadas existentes
         await JSRuntime.InvokeVoidAsync("setDotNetHelper", dotNetHelper);

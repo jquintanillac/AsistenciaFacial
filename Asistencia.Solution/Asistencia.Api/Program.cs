@@ -29,6 +29,8 @@ else
 
 app.UseHttpsRedirection();
 
+app.UseStaticFiles();
+
 app.UseMiddleware<Asistencia.Api.Middleware.SecurityHeadersMiddleware>();
 
 app.UseAuthentication();
